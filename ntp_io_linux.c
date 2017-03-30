@@ -49,6 +49,17 @@
 #include "sys_linux.h"
 #include "util.h"
 
+#if 0
+#define SCM_TIMESTAMPING_PKTINFO 58
+#define SOF_TIMESTAMPING_OPT_PKTINFO (1<<13)
+#define SOF_TIMESTAMPING_OPT_TX_SWHW (1<<14)
+#define HWTSTAMP_FILTER_NTP_ALL (HWTSTAMP_FILTER_PTP_V2_DELAY_REQ + 1)
+struct scm_ts_pktinfo {
+	int if_index;
+	int pkt_length;
+};
+#endif
+
 union sockaddr_in46 {
   struct sockaddr_in in4;
 #ifdef FEAT_IPV6
@@ -153,7 +164,11 @@ add_interface(CNF_HwTsInterface *conf_iface)
 
   ts_config.flags = 0;
   ts_config.tx_type = HWTSTAMP_TX_ON;
+#if 1
+  ts_config.rx_filter = HWTSTAMP_FILTER_NTP_ALL;
+#else
   ts_config.rx_filter = HWTSTAMP_FILTER_ALL;
+#endif
   req.ifr_data = (char *)&ts_config;
 
   if (ioctl(sock_fd, SIOCSHWTSTAMP, &req)) {
@@ -284,6 +299,14 @@ NIO_Linux_Initialise(void)
   if (hwts) {
     ts_flags = SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE;
     ts_tx_flags = SOF_TIMESTAMPING_TX_HARDWARE;
+#if 1
+    if (1) {
+      ts_flags |= SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RX_SOFTWARE;
+      ts_tx_flags |= SOF_TIMESTAMPING_TX_SOFTWARE;
+      ts_flags |= SOF_TIMESTAMPING_OPT_PKTINFO;
+      ts_flags |= SOF_TIMESTAMPING_OPT_TX_SWHW;
+    }
+#endif
   } else {
     ts_flags = SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RX_SOFTWARE;
     ts_tx_flags = SOF_TIMESTAMPING_TX_SOFTWARE;
@@ -371,11 +394,11 @@ get_interface(int if_index)
 
 static void
 process_hw_timestamp(struct Interface *iface, struct timespec *hw_ts,
-                     NTP_Local_Timestamp *local_ts, int rx_ntp_length, int family)
+                     NTP_Local_Timestamp *local_ts, int rx_ntp_length, int family,
+                     int l2_length)
 {
   struct timespec sample_phc_ts, sample_sys_ts, sample_local_ts, ts;
   double rx_correction, ts_delay, err;
-  int l2_length;
 
   if (HCL_NeedsNewSample(iface->clock, &local_ts->ts)) {
     if (!SYS_Linux_GetPHCSample(iface->phc_fd, iface->phc_nocrossts, iface->precision,
@@ -390,12 +413,13 @@ process_hw_timestamp(struct Interface *iface, struct timespec *hw_ts,
 
   /* We need to transpose RX timestamps as hardware timestamps are normally
      preamble timestamps and RX timestamps in NTP are supposed to be trailer
-     timestamps.  Without raw sockets we don't know the length of the packet
-     at layer 2, so we make an assumption that UDP data start at the same
-     position as in the last transmitted packet which had a HW TX timestamp. */
+     timestamps.  If we don't know the length of the packet at layer 2, we
+     make an assumption that UDP data start at the same position as in the
+     last transmitted packet which had a HW TX timestamp. */
   if (rx_ntp_length && iface->link_speed) {
-    l2_length = (family == IPADDR_INET4 ? iface->l2_udp4_ntp_start :
-                 iface->l2_udp6_ntp_start) + rx_ntp_length + 4;
+    if (!l2_length)
+      l2_length = (family == IPADDR_INET4 ? iface->l2_udp4_ntp_start :
+                   iface->l2_udp6_ntp_start) + rx_ntp_length + 4;
     rx_correction = l2_length / (1.0e6 / 8 * iface->link_speed);
 
     UTI_AddDoubleToTimespec(hw_ts, rx_correction, hw_ts);
@@ -496,21 +520,33 @@ NIO_Linux_ProcessMessage(NTP_Remote_Address *remote_addr, NTP_Local_Address *loc
 
   is_tx = hdr->msg_flags & MSG_ERRQUEUE;
   iface = NULL;
+  l2_length = 0;
 
   for (cmsg = CMSG_FIRSTHDR(hdr); cmsg; cmsg = CMSG_NXTHDR(hdr, cmsg)) {
-    if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING) {
+    if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING_PKTINFO) {
+      struct scm_ts_pktinfo ts_pktinfo;
+
+      memcpy(&ts_pktinfo, CMSG_DATA(cmsg), sizeof (ts_pktinfo));
+      DEBUG_LOG("SCM_TIMESTAMPING_PKTINFO: if=%d len=%d\n", ts_pktinfo.if_index, ts_pktinfo.pkt_length);
+
+      local_addr->if_index = ts_pktinfo.if_index;
+      l2_length = ts_pktinfo.pkt_length;
+    } else if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING) {
       struct scm_timestamping ts3;
 
       memcpy(&ts3, CMSG_DATA(cmsg), sizeof (ts3));
+      DEBUG_LOG("%s SCM_TIMESTAMPING: swts=%s hwts=%s", is_tx ? "TX" : "RX",
+                UTI_TimespecToString(&ts3.ts[0]), UTI_TimespecToString(&ts3.ts[2]));
 
-      if (!UTI_IsZeroTimespec(&ts3.ts[0])) {
+      if (!UTI_IsZeroTimespec(&ts3.ts[0]) && UTI_IsZeroTimespec(&ts3.ts[2])) {
         LCL_CookTime(&ts3.ts[0], &local_ts->ts, &local_ts->err);
         local_ts->source = NTP_TS_KERNEL;
-      } else if (!UTI_IsZeroTimespec(&ts3.ts[2])) {
+      }
+      if (!UTI_IsZeroTimespec(&ts3.ts[2])) {
         iface = get_interface(local_addr->if_index);
         if (iface) {
           process_hw_timestamp(iface, &ts3.ts[2], local_ts, !is_tx ? length : 0,
-                               remote_addr->ip_addr.family);
+                               remote_addr->ip_addr.family, l2_length);
         } else {
           DEBUG_LOG("HW clock not found for interface %d", local_addr->if_index);
         }
@@ -554,9 +590,9 @@ NIO_Linux_ProcessMessage(NTP_Remote_Address *remote_addr, NTP_Local_Address *loc
       iface->l2_udp6_ntp_start = l2_length - length;
   }
 
-  /* Drop the message if HW timestamp is missing or its processing failed */
-  if ((ts_flags & SOF_TIMESTAMPING_RAW_HARDWARE) && local_ts->source != NTP_TS_HARDWARE) {
-    DEBUG_LOG("Missing HW timestamp");
+  /* Drop the message if timestamp is missing or its processing failed */
+  if (local_ts->source != NTP_TS_KERNEL && local_ts->source != NTP_TS_HARDWARE) {
+    DEBUG_LOG("Missing TX timestamp");
     return 1;
   }
 
