@@ -138,6 +138,8 @@ static const char permissions[] = {
   PERMIT_AUTH, /* ADD_PEER2 */
   PERMIT_AUTH, /* ADD_SERVER3 */
   PERMIT_AUTH, /* ADD_PEER3 */
+  PERMIT_AUTH, /* ADD_REFCLOCK */
+  PERMIT_AUTH, /* DEL_REFCLOCK */
 };
 
 /* ================================================== */
@@ -1239,6 +1241,81 @@ handle_ntp_data(CMD_Request *rx_message, CMD_Reply *tx_message)
 }
 
 /* ================================================== */
+
+static void
+handle_add_refclock(CMD_Request *rx_message, CMD_Reply *tx_message)
+{
+  RefclockParameters refclock;
+  char name[sizeof(rx_message->data.add_refclock.driver_name) + 1];
+  char param[sizeof(rx_message->data.add_refclock.driver_parameter) + 1];
+  RCL_Status status;
+
+  strncpy(name,rx_message->data.add_refclock.driver_name,sizeof(rx_message->data.add_refclock.driver_name));
+  name[sizeof(name)-1] = '\0';
+  refclock.driver_name = Strdup(name);
+
+  strncpy(param,rx_message->data.add_refclock.driver_parameter,sizeof(rx_message->data.add_refclock.driver_parameter));
+  param[sizeof(param)-1] = '\0';
+  refclock.driver_parameter = Strdup(param);
+
+  refclock.driver_poll = ntohl(rx_message->data.add_refclock.driver_poll);
+  refclock.poll = ntohl(rx_message->data.add_refclock.poll);
+  refclock.filter_length = ntohl(rx_message->data.add_refclock.filter_length);
+  refclock.pps_rate = ntohl(rx_message->data.add_refclock.pps_rate);
+  refclock.min_samples = ntohl(rx_message->data.add_refclock.min_samples);
+  refclock.max_samples = ntohl(rx_message->data.add_refclock.max_samples);
+  refclock.max_lock_age = ntohl(rx_message->data.add_refclock.max_lock_age);
+  refclock.ref_id = ntohl(rx_message->data.add_refclock.ref_id);
+  refclock.lock_ref_id = ntohl(rx_message->data.add_refclock.lock_ref_id);
+  refclock.offset = UTI_FloatNetworkToHost(rx_message->data.add_refclock.offset);
+  refclock.delay = UTI_FloatNetworkToHost(rx_message->data.add_refclock.delay);
+  refclock.precision = UTI_FloatNetworkToHost(rx_message->data.add_refclock.precision);
+  refclock.max_dispersion = UTI_FloatNetworkToHost(rx_message->data.add_refclock.max_dispersion);
+
+  refclock.sel_options =
+    (ntohl(rx_message->data.add_refclock.flags) & REQ_ADDSRC_PREFER ? SRC_SELECT_PREFER : 0) |
+    (ntohl(rx_message->data.add_refclock.flags) & REQ_ADDSRC_NOSELECT ? SRC_SELECT_NOSELECT : 0) |
+    (ntohl(rx_message->data.add_refclock.flags) & REQ_ADDSRC_TRUST ? SRC_SELECT_TRUST : 0) |
+    (ntohl(rx_message->data.add_refclock.flags) & REQ_ADDSRC_REQUIRE ? SRC_SELECT_REQUIRE : 0);
+
+  status = RCL_AddRefclock(&refclock, 1);
+  switch (status) {
+    case RCL_Success:
+      break;
+    case RCL_NoSuchDriver:
+      tx_message->status = htons(STT_NOSUCHSOURCE);
+      break;
+    case RCL_InitialisationFailed:
+      tx_message->status = htons(STT_FAILED);
+      break;
+    case RCL_NoSuchSource:
+      assert(0);
+      break;
+  }
+}
+
+/* ================================================== */
+
+static void
+handle_del_refclock(CMD_Request *rx_message, CMD_Reply *tx_message)
+{
+    RCL_Status status;
+
+    status = RCL_RemoveRefclock(ntohl(rx_message->data.del_refclock.refid));
+    switch (status) {
+      case RCL_Success:
+        break;
+      case RCL_NoSuchSource:
+        tx_message->status = htons(STT_NOSUCHSOURCE);
+        break;
+      case RCL_NoSuchDriver:
+      case RCL_InitialisationFailed:
+        assert(0);
+        break;
+    }
+}
+
+/* ================================================== */
 /* Read a packet and process it */
 
 static void
@@ -1628,6 +1705,14 @@ read_from_cmd_socket(int sock_fd, int event, void *anything)
         case REQ_NTP_DATA:
           handle_ntp_data(&rx_message, &tx_message);
           break;
+          
+        case REQ_ADD_REFCLOCK:
+          handle_add_refclock(&rx_message, &tx_message);
+          break;
+
+        case REQ_DEL_REFCLOCK:
+          handle_del_refclock(&rx_message, &tx_message);
+          break;          
 
         default:
           DEBUG_LOG("Unhandled command %d", rx_command);

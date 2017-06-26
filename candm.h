@@ -99,7 +99,9 @@
 #define REQ_ADD_PEER2 59
 #define REQ_ADD_SERVER3 60
 #define REQ_ADD_PEER3 61
-#define N_REQUEST_TYPES 62
+#define REQ_ADD_REFCLOCK 62
+#define REQ_DEL_REFCLOCK 63
+#define N_REQUEST_TYPES 64
 
 /* Structure used to exchange timespecs independent of time_t size */
 typedef struct {
@@ -331,6 +333,31 @@ typedef struct {
   int32_t EOR;
 } REQ_NTPData;
 
+typedef struct {
+  char driver_name[32];
+  char driver_parameter[128];
+  int32_t driver_poll;
+  int32_t poll;
+  uint32_t filter_length;
+  int32_t pps_rate;
+  uint32_t min_samples;
+  uint32_t max_samples;
+  int32_t max_lock_age;
+  uint32_t ref_id;
+  uint32_t lock_ref_id;
+  Float offset;
+  Float delay;
+  Float precision;
+  Float max_dispersion;
+  int32_t flags;  
+  int32_t EOR;
+} REQ_Add_Refclock;
+
+typedef struct {
+  uint32_t refid;
+  int32_t EOR;
+} REQ_Del_Refclock;
+
 /* ================================================== */
 
 #define PKT_TYPE_CMD_REQUEST 1
@@ -433,6 +460,8 @@ typedef struct {
     REQ_ReselectDistance reselect_distance;
     REQ_SmoothTime smoothtime;
     REQ_NTPData ntp_data;
+    REQ_Add_Refclock add_refclock;
+    REQ_Del_Refclock del_refclock;
   } data; /* Command specific parameters */
 
   /* Padding used to prevent traffic amplification.  It only defines the
