@@ -1141,6 +1141,52 @@ process_cmd_add_peer(CMD_Request *msg, char *line)
   return process_cmd_add_server_or_peer(msg, line);
 }
 
+
+
+/* ================================================== */
+
+static int
+process_cmd_add_refclock(CMD_Request *msg, char *line)
+{
+  RefclockParameters refclock;
+  int result = 0, status;
+  
+  msg->command = htons(REQ_ADD_REFCLOCK);
+  status = CPS_ParseRefclockAdd(line, &refclock);
+  switch (status) {
+    case 0:
+      LOG(LOGS_ERR, "Invalid syntax for add command");
+      break;
+    default:
+      strncpy(msg->data.add_refclock.driver_name,refclock.driver_name,sizeof(msg->data.add_refclock.driver_name));
+      strncpy(msg->data.add_refclock.driver_parameter,refclock.driver_parameter,sizeof(msg->data.add_refclock.driver_parameter));
+      msg->data.add_refclock.driver_poll = htonl(refclock.driver_poll);
+      msg->data.add_refclock.poll = htonl(refclock.poll);
+      msg->data.add_refclock.filter_length = htonl(refclock.filter_length);
+      msg->data.add_refclock.pps_rate = htonl(refclock.pps_rate);
+      msg->data.add_refclock.min_samples = htonl(refclock.min_samples);
+      msg->data.add_refclock.max_samples = htonl(refclock.max_samples);
+      msg->data.add_refclock.max_lock_age = htonl(refclock.max_lock_age);
+      msg->data.add_refclock.ref_id = htonl(refclock.ref_id);
+      msg->data.add_refclock.lock_ref_id = htonl(refclock.lock_ref_id);
+      msg->data.add_refclock.offset = UTI_FloatHostToNetwork(refclock.offset);
+      msg->data.add_refclock.delay = UTI_FloatHostToNetwork(refclock.delay);
+      msg->data.add_refclock.precision = UTI_FloatHostToNetwork(refclock.precision);
+      msg->data.add_refclock.max_dispersion = UTI_FloatHostToNetwork(refclock.max_dispersion);
+
+      msg->data.add_refclock.flags = htonl(
+          (refclock.sel_options & SRC_SELECT_PREFER ? REQ_ADDSRC_PREFER : 0) |
+          (refclock.sel_options & SRC_SELECT_NOSELECT ? REQ_ADDSRC_NOSELECT : 0) |
+          (refclock.sel_options & SRC_SELECT_TRUST ? REQ_ADDSRC_TRUST : 0) |
+          (refclock.sel_options & SRC_SELECT_REQUIRE ? REQ_ADDSRC_REQUIRE : 0));
+      result = 1;
+
+      break;
+  }
+
+  return result;
+}
+
 /* ================================================== */
 
 static int
@@ -1150,20 +1196,33 @@ process_cmd_delete(CMD_Request *msg, char *line)
   int ok = 0;
   IPAddr address;
 
-  msg->command = htons(REQ_DEL_SOURCE);
   hostname = line;
-  CPS_SplitWord(line);
+  line = CPS_SplitWord(line);
 
   if (!*hostname) {
     LOG(LOGS_ERR, "Invalid syntax for address");
     ok = 0;
   } else {
-    if (DNS_Name2IPAddress(hostname, &address, 1) != DNS_Success) {
-      LOG(LOGS_ERR, "Could not get address for hostname");
-      ok = 0;
+    if (strcmp(hostname,"refclock") == 0) {
+      char* refid = line;
+      CPS_SplitWord(line);
+      if ((!*refid) || (strlen(refid) != sizeof(msg->data.del_refclock.refid))) {
+        LOG(LOGS_ERR, "Invalid syntax for refclock id");
+        ok = 0;
+      } else {
+        msg->command = htons(REQ_DEL_REFCLOCK);
+        msg->data.del_refclock.refid = htonl( (uint32_t)refid[0] << 24 | refid[1] << 16 | refid[2] << 8 | refid[3] );
+        ok = 1;
+      }
     } else {
-      UTI_IPHostToNetwork(&address, &msg->data.del_source.ip_addr);
-      ok = 1;
+      msg->command = htons(REQ_DEL_SOURCE);
+      if (DNS_Name2IPAddress(hostname, &address, 1) != DNS_Success) {
+        LOG(LOGS_ERR, "Could not get address for hostname");
+        ok = 0;
+      } else {
+        UTI_IPHostToNetwork(&address, &msg->data.del_source.ip_addr);
+        ok = 1;
+      }
     }
   }
 
@@ -1209,6 +1268,10 @@ give_help(void)
     "online [<mask>/<address>]\0Set sources in subnet to online status\0"
     "polltarget <address> <target>\0Modify poll target\0"
     "refresh\0Refresh IP addresses\0"
+    "\0\0"
+    "Reference clocks:\0\0"
+    "add refclock <driver> [options]\0Add a new reference clock\0"
+    "delete refclock <refid>\0Remove reference clock\0"
     "\0\0"
     "Manual time input:\0\0"
     "manual off|on|reset\0Disable/enable/reset settime command\0"
@@ -2886,6 +2949,8 @@ process_line(char *line)
     ret = process_cmd_activity(line);
   } else if (!strcmp(command, "add") && !strncmp(line, "peer", 4)) {
     do_normal_submit = process_cmd_add_peer(&tx_message, CPS_SplitWord(line));
+  } else if (!strcmp(command, "add") && !strncmp(line, "refclock", 8)) {
+    do_normal_submit = process_cmd_add_refclock(&tx_message, CPS_SplitWord(line));    
   } else if (!strcmp(command, "add") && !strncmp(line, "server", 6)) {
     do_normal_submit = process_cmd_add_server(&tx_message, CPS_SplitWord(line));
   } else if (!strcmp(command, "allow")) {
