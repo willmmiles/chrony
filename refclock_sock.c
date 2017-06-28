@@ -137,6 +137,7 @@ static void sock_finalise(RCL_Instance instance)
   sockfd = (long)RCL_GetDriverData(instance);
   SCH_RemoveFileHandler(sockfd);
   close(sockfd);
+  unlink(RCL_GetDriverParameter(instance));
 }
 
 RefclockDriver RCL_SOCK_driver = {
