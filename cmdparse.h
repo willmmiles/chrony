@@ -29,6 +29,7 @@
 
 #include "srcparams.h"
 #include "addressing.h"
+#include "refclock.h"
 
 typedef struct {
   char *name;
@@ -41,6 +42,9 @@ extern int CPS_ParseNTPSourceAdd(char *line, CPS_NTP_Source *src);
   
 /* Parse a command to enable local reference */
 extern int CPS_ParseLocal(char *line, int *stratum, int *orphan, double *distance);
+
+/* Parse a command to add a reference clock */
+extern int CPS_ParseRefclockAdd(char *line, RefclockParameters *refclock);
 
 /* Remove extra white-space and comments */
 extern void CPS_NormalizeLine(char *line);

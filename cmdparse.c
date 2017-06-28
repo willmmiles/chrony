@@ -196,6 +196,135 @@ CPS_ParseLocal(char *line, int *stratum, int *orphan, double *distance)
 
 /* ================================================== */
 
+int
+CPS_ParseRefclockAdd(char *line, RefclockParameters *refclock)
+{
+  int n;
+  char *p, *cmd;
+  unsigned char ref[5];
+
+  refclock->poll = 4;
+  refclock->driver_poll = 0;
+  refclock->filter_length = 64;
+  refclock->pps_forced = 0;
+  refclock->pps_rate = 0;
+  refclock->min_samples = SRC_DEFAULT_MINSAMPLES;
+  refclock->max_samples = SRC_DEFAULT_MAXSAMPLES;
+  refclock->sel_options = 0;
+  refclock->offset = 0.0;
+  refclock->delay = 1e-9;
+  refclock->precision = 0.0;
+  refclock->max_dispersion = 0.0;
+  refclock->pulse_width = 0.0;
+  refclock->ref_id = 0;
+  refclock->max_lock_age = 2;
+  refclock->lock_ref_id = 0;
+  refclock->stratum = 0;
+  refclock->tai = 0;
+
+  if (!*line) {
+    return 0;
+  }
+
+  p = line;
+  line = CPS_SplitWord(line);
+
+  if (!*line) {
+    return 0;
+  }
+
+  refclock->driver_name = p;
+
+  p = line;
+  line = CPS_SplitWord(line);
+  refclock->driver_parameter = p;
+
+  for (cmd = line; *cmd; line += n, cmd = line) {
+    line = CPS_SplitWord(line);
+
+    if (!strcasecmp(cmd, "refid")) {
+      if (sscanf(line, "%4s%n", (char *)ref, &n) != 1)
+        break;
+      refclock->ref_id = (uint32_t)ref[0] << 24 | ref[1] << 16 | ref[2] << 8 | ref[3];
+    } else if (!strcasecmp(cmd, "lock")) {
+      if (sscanf(line, "%4s%n", (char *)ref, &n) != 1)
+        break;
+      refclock->lock_ref_id = (uint32_t)ref[0] << 24 | ref[1] << 16 | ref[2] << 8 | ref[3];
+    } else if (!strcasecmp(cmd, "poll")) {
+      if (sscanf(line, "%d%n", &refclock->poll, &n) != 1) {
+        break;
+      }
+    } else if (!strcasecmp(cmd, "dpoll")) {
+      if (sscanf(line, "%d%n", &refclock->driver_poll, &n) != 1) {
+        break;
+      }
+    } else if (!strcasecmp(cmd, "filter")) {
+      if (sscanf(line, "%d%n", &refclock->filter_length, &n) != 1) {
+        break;
+      }
+    } else if (!strcasecmp(cmd, "rate")) {
+      if (sscanf(line, "%d%n", &refclock->pps_rate, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "minsamples")) {
+      if (sscanf(line, "%d%n", &refclock->min_samples, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "maxlockage")) {
+      if (sscanf(line, "%d%n", &refclock->max_lock_age, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "maxsamples")) {
+      if (sscanf(line, "%d%n", &refclock->max_samples, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "offset")) {
+      if (sscanf(line, "%lf%n", &refclock->offset, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "delay")) {
+      if (sscanf(line, "%lf%n", &refclock->delay, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "pps")) {
+      n = 0;
+      refclock->pps_forced = 1;
+    } else if (!strcasecmp(cmd, "precision")) {
+      if (sscanf(line, "%lf%n", &refclock->precision, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "maxdispersion")) {
+      if (sscanf(line, "%lf%n", &refclock->max_dispersion, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "stratum")) {
+      if (sscanf(line, "%d%n", &refclock->stratum, &n) != 1 ||
+          refclock->stratum >= NTP_MAX_STRATUM || refclock->stratum < 0)
+        break;
+    } else if (!strcasecmp(cmd, "tai")) {
+      n = 0;
+      refclock->tai = 1;
+    } else if (!strcasecmp(cmd, "width")) {
+      if (sscanf(line, "%lf%n", &refclock->pulse_width, &n) != 1)
+        break;
+    } else if (!strcasecmp(cmd, "noselect")) {
+      n = 0;
+      refclock->sel_options |= SRC_SELECT_NOSELECT;
+    } else if (!strcasecmp(cmd, "prefer")) {
+      n = 0;
+      refclock->sel_options |= SRC_SELECT_PREFER;
+    } else if (!strcasecmp(cmd, "trust")) {
+      n = 0;
+      refclock->sel_options |= SRC_SELECT_TRUST;
+    } else if (!strcasecmp(cmd, "require")) {
+      n = 0;
+      refclock->sel_options |= SRC_SELECT_REQUIRE;
+    } else {
+      return 0;
+    }
+  }
+
+  if (*cmd) {
+    return 0;
+  }
+
+  return 1;
+}
+
+/* ================================================== */
+
 void
 CPS_NormalizeLine(char *line)
 {

@@ -680,156 +680,16 @@ parse_ratelimit(char *line, int *enabled, int *interval, int *burst, int *leak)
 static void
 parse_refclock(char *line)
 {
-  int n, poll, dpoll, filter_length, pps_rate, min_samples, max_samples, sel_options;
-  int max_lock_age, pps_forced, stratum, tai;
-  uint32_t ref_id, lock_ref_id;
-  double offset, delay, precision, max_dispersion, pulse_width;
-  char *p, *cmd, *name, *param;
-  unsigned char ref[5];
-  RefclockParameters *refclock;
+  RefclockParameters refclock;
 
-  poll = 4;
-  dpoll = 0;
-  filter_length = 64;
-  pps_forced = 0;
-  pps_rate = 0;
-  min_samples = SRC_DEFAULT_MINSAMPLES;
-  max_samples = SRC_DEFAULT_MAXSAMPLES;
-  sel_options = 0;
-  offset = 0.0;
-  delay = 1e-9;
-  precision = 0.0;
-  max_dispersion = 0.0;
-  pulse_width = 0.0;
-  ref_id = 0;
-  max_lock_age = 2;
-  lock_ref_id = 0;
-  stratum = 0;
-  tai = 0;
-
-  if (!*line) {
+  if (!CPS_ParseRefclockAdd(line, &refclock)) {
     command_parse_error();
     return;
   }
-
-  p = line;
-  line = CPS_SplitWord(line);
-
-  if (!*line) {
-    command_parse_error();
-    return;
-  }
-
-  name = Strdup(p);
-
-  p = line;
-  line = CPS_SplitWord(line);
-  param = Strdup(p);
-
-  for (cmd = line; *cmd; line += n, cmd = line) {
-    line = CPS_SplitWord(line);
-
-    if (!strcasecmp(cmd, "refid")) {
-      if (sscanf(line, "%4s%n", (char *)ref, &n) != 1)
-        break;
-      ref_id = (uint32_t)ref[0] << 24 | ref[1] << 16 | ref[2] << 8 | ref[3];
-    } else if (!strcasecmp(cmd, "lock")) {
-      if (sscanf(line, "%4s%n", (char *)ref, &n) != 1)
-        break;
-      lock_ref_id = (uint32_t)ref[0] << 24 | ref[1] << 16 | ref[2] << 8 | ref[3];
-    } else if (!strcasecmp(cmd, "poll")) {
-      if (sscanf(line, "%d%n", &poll, &n) != 1) {
-        break;
-      }
-    } else if (!strcasecmp(cmd, "dpoll")) {
-      if (sscanf(line, "%d%n", &dpoll, &n) != 1) {
-        break;
-      }
-    } else if (!strcasecmp(cmd, "filter")) {
-      if (sscanf(line, "%d%n", &filter_length, &n) != 1) {
-        break;
-      }
-    } else if (!strcasecmp(cmd, "rate")) {
-      if (sscanf(line, "%d%n", &pps_rate, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "minsamples")) {
-      if (sscanf(line, "%d%n", &min_samples, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "maxlockage")) {
-      if (sscanf(line, "%d%n", &max_lock_age, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "maxsamples")) {
-      if (sscanf(line, "%d%n", &max_samples, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "offset")) {
-      if (sscanf(line, "%lf%n", &offset, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "delay")) {
-      if (sscanf(line, "%lf%n", &delay, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "pps")) {
-      n = 0;
-      pps_forced = 1;
-    } else if (!strcasecmp(cmd, "precision")) {
-      if (sscanf(line, "%lf%n", &precision, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "maxdispersion")) {
-      if (sscanf(line, "%lf%n", &max_dispersion, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "stratum")) {
-      if (sscanf(line, "%d%n", &stratum, &n) != 1 ||
-          stratum >= NTP_MAX_STRATUM || stratum < 0)
-        break;
-    } else if (!strcasecmp(cmd, "tai")) {
-      n = 0;
-      tai = 1;
-    } else if (!strcasecmp(cmd, "width")) {
-      if (sscanf(line, "%lf%n", &pulse_width, &n) != 1)
-        break;
-    } else if (!strcasecmp(cmd, "noselect")) {
-      n = 0;
-      sel_options |= SRC_SELECT_NOSELECT;
-    } else if (!strcasecmp(cmd, "prefer")) {
-      n = 0;
-      sel_options |= SRC_SELECT_PREFER;
-    } else if (!strcasecmp(cmd, "trust")) {
-      n = 0;
-      sel_options |= SRC_SELECT_TRUST;
-    } else if (!strcasecmp(cmd, "require")) {
-      n = 0;
-      sel_options |= SRC_SELECT_REQUIRE;
-    } else {
-      other_parse_error("Invalid refclock option");
-      return;
-    }
-  }
-
-  if (*cmd) {
-    command_parse_error();
-    return;
-  }
-
-  refclock = (RefclockParameters *)ARR_GetNewElement(refclock_sources);
-  refclock->driver_name = name;
-  refclock->driver_parameter = param;
-  refclock->driver_poll = dpoll;
-  refclock->poll = poll;
-  refclock->filter_length = filter_length;
-  refclock->pps_forced = pps_forced;
-  refclock->pps_rate = pps_rate;
-  refclock->min_samples = min_samples;
-  refclock->max_samples = max_samples;
-  refclock->sel_options = sel_options;
-  refclock->stratum = stratum;
-  refclock->tai = tai;
-  refclock->offset = offset;
-  refclock->delay = delay;
-  refclock->precision = precision;
-  refclock->max_dispersion = max_dispersion;
-  refclock->pulse_width = pulse_width;
-  refclock->ref_id = ref_id;
-  refclock->max_lock_age = max_lock_age;
-  refclock->lock_ref_id = lock_ref_id;
+  
+  refclock.driver_name = Strdup(refclock.driver_name);
+  refclock.driver_parameter = Strdup(refclock.driver_parameter);
+  ARR_AppendElement(refclock_sources, &refclock);
 }
 
 /* ================================================== */
