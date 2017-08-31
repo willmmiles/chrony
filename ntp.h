@@ -93,15 +93,11 @@ typedef struct {
   NTP_int64 receive_ts;
   NTP_int64 transmit_ts;
 
-  /* Optional extension fields, we don't send packets with them yet */
-  /* uint8_t extensions[] */
-
-  /* Optional message authentication code (MAC) */
-  NTP_int32 auth_keyid;
-  uint8_t auth_data[NTP_MAX_MAC_LENGTH - 4];
+  /* Optional fields, extensions + MAC */
+  uint8_t extensions[NTP_MIN_EXTENSION_LENGTH + NTP_MAX_MAC_LENGTH]; 
 } NTP_Packet;
 
-#define NTP_NORMAL_PACKET_LENGTH (int)offsetof(NTP_Packet, auth_keyid)
+#define NTP_NORMAL_PACKET_LENGTH (int)offsetof(NTP_Packet, extensions)
 
 /* The buffer used to hold a datagram read from the network */
 typedef struct {

@@ -139,9 +139,12 @@ send_response(int interleaved, int authenticated, int allow_update, int valid_ts
   }
 
   if (authenticated) {
-    res->auth_keyid = req->auth_keyid;
-    KEY_GenerateAuth(ntohl(res->auth_keyid), (unsigned char *)res, NTP_NORMAL_PACKET_LENGTH,
-                     res->auth_data, 16);
+    /* Copy the auth key */
+    NTP_int32 auth_keyid;
+    memcpy(&auth_keyid, (char*)req + req_length - (4+16), sizeof(auth_keyid));
+    memcpy(res->extensions, &auth_keyid, sizeof(auth_keyid));
+    KEY_GenerateAuth(ntohl(auth_keyid), (unsigned char *)res, NTP_NORMAL_PACKET_LENGTH,
+                     &res->extensions[sizeof(auth_keyid)], 16);
     res_length = NTP_NORMAL_PACKET_LENGTH + 4 + 16;
   } else {
     res_length = NTP_NORMAL_PACKET_LENGTH;
@@ -150,10 +153,15 @@ send_response(int interleaved, int authenticated, int allow_update, int valid_ts
   if (!valid_auth) {
     switch (random() % 3) {
       case 0:
-        res->auth_keyid++;
+        {
+            NTP_int32 auth_keyid;
+            memcpy(&auth_keyid, res->extensions, sizeof(auth_keyid));
+            ++auth_keyid;
+            memcpy(res->extensions, &auth_keyid, sizeof(auth_keyid));
+        }
         break;
       case 1:
-        res->auth_data[random() % 16]++;
+        res->extensions[sizeof(NTP_int32) + (random() % 16)]++;
         break;
       case 2:
         res_length = NTP_NORMAL_PACKET_LENGTH;

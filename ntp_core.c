@@ -897,10 +897,11 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
                 )
 {
   NTP_Packet message;
-  int auth_len, mac_len, length, ret, precision;
+  int auth_len, mac_len, ext_len, length, ret, precision;
   struct timespec local_receive, local_transmit;
   double smooth_offset, local_transmit_err;
   NTP_int64 ts_fuzz;
+  NTP_int32 auth_keyid = htonl(key_id);
 
   /* Parameters read from reference module */
   int are_we_synchronised, our_stratum, smooth_time;
@@ -918,6 +919,7 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
   if (interleaved && (!local_tx || UTI_IsZeroTimespec(&local_tx->ts)))
     interleaved = 0;
 
+  ext_len = 0;
   smooth_time = 0;
   smooth_offset = 0.0;
 
@@ -1014,7 +1016,7 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
     if (smooth_time)
       UTI_AddDoubleToTimespec(&local_transmit, smooth_offset, &local_transmit);
 
-    length = NTP_NORMAL_PACKET_LENGTH;
+    length = NTP_NORMAL_PACKET_LENGTH + ext_len;
 
     /* Authenticate the packet */
 
@@ -1029,16 +1031,17 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
 
       if (auth_mode == AUTH_SYMMETRIC) {
         auth_len = KEY_GenerateAuth(key_id, (unsigned char *) &message,
-                                    offsetof(NTP_Packet, auth_keyid),
-                                    (unsigned char *)&message.auth_data,
-                                    sizeof (message.auth_data));
+                                    length,
+                                    &message.extensions[ext_len + sizeof(auth_keyid)],
+                                    NTP_MAX_MAC_LENGTH - 4);
         if (!auth_len) {
           DEBUG_LOG("Could not generate auth data with key %"PRIu32, key_id);
           return 0;
         }
 
-        message.auth_keyid = htonl(key_id);
-        mac_len = sizeof (message.auth_keyid) + auth_len;
+        /* Assign auth keyid */
+        memcpy(&message.extensions[ext_len], &auth_keyid, sizeof(auth_keyid));
+        mac_len = sizeof (auth_keyid) + auth_len;
 
         /* Truncate MACs in NTPv4 packets to allow deterministic parsing
            of extension fields (RFC 7822) */
