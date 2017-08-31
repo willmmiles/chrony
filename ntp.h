@@ -55,6 +55,10 @@ typedef uint32_t NTP_int32;
    extension fields in one packet) */
 #define NTP_MAX_EXTENSIONS_LENGTH 1024
 
+/* The minimum length of the last extension, if no MAC is included, per
+   RFC 7822 */
+#define NTP_MIN_EXTENSION_LENGTH_NO_MAC 28
+
 /* The minimum and maximum supported length of MAC */
 #define NTP_MIN_MAC_LENGTH (4 + 16)
 #define NTP_MAX_MAC_LENGTH (4 + MAX_HASH_LENGTH)

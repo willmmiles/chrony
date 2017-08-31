@@ -897,7 +897,7 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
                 )
 {
   NTP_Packet message;
-  int auth_len, mac_len, ext_len, length, ret, precision;
+  int auth_len, mac_len, ext_len, last_ext_len, length, ret, precision;
   struct timespec local_receive, local_transmit;
   double smooth_offset, local_transmit_err;
   NTP_int64 ts_fuzz;
@@ -919,6 +919,7 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
   if (interleaved && (!local_tx || UTI_IsZeroTimespec(&local_tx->ts)))
     interleaved = 0;
 
+  last_ext_len = 0;
   ext_len = 0;
   smooth_time = 0;
   smooth_offset = 0.0;
@@ -1002,6 +1003,15 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
   } else {
     UTI_ZeroNtp64(&message.originate_ts);
     UTI_ZeroNtp64(&message.receive_ts);
+  }
+
+  if ((auth_mode != AUTH_SYMMETRIC) && (auth_mode != AUTH_MSSNTP)
+    && (ext_len > 0) && (last_ext_len < NTP_MIN_EXTENSION_LENGTH_NO_MAC)) {
+    /* Per RFC 7822, extend the last extension field to the minimum length */
+    memset(&message.extensions[ext_len], 0, NTP_MIN_EXTENSION_LENGTH_NO_MAC - last_ext_len);
+    length = htons(NTP_MIN_EXTENSION_LENGTH_NO_MAC);
+    memcpy(&message.extensions[ext_len - last_ext_len + sizeof(int16_t)],&length, sizeof(int16_t));
+    ext_len += NTP_MIN_EXTENSION_LENGTH_NO_MAC - last_ext_len;
   }
 
   do {
