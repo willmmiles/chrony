@@ -146,7 +146,8 @@ extern void REF_SetReference
  double frequency,
  double skew,
  double root_delay,
- double root_dispersion
+ double root_dispersion,
+ int tai_offset
 );
 
 extern void REF_SetManualReference
