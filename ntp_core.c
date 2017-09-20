@@ -1719,7 +1719,7 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
                            offset, delay, dispersion,
                            root_delay, root_dispersion,
                            MAX(message->stratum, inst->min_stratum),
-                           (NTP_Leap) pkt_leap);
+                           (NTP_Leap) pkt_leap, 0);
 
       SRC_SelectSource(inst->source);
 

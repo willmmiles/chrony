@@ -107,7 +107,7 @@ extern SST_Stats SRC_GetSourcestats(SRC_Instance instance);
 
    */
 
-extern void SRC_AccumulateSample(SRC_Instance instance, struct timespec *sample_time, double offset, double peer_delay, double peer_dispersion, double root_delay, double root_dispersion, int stratum, NTP_Leap leap_status);
+extern void SRC_AccumulateSample(SRC_Instance instance, struct timespec *sample_time, double offset, double peer_delay, double peer_dispersion, double root_delay, double root_dispersion, int stratum, NTP_Leap leap_status, int tai_offset);
 
 /* This routine sets the source as receiving reachability updates */
 extern void SRC_SetActive(SRC_Instance inst);
