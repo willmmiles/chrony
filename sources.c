@@ -92,6 +92,7 @@ typedef enum {
 struct SRC_Instance_Record {
   SST_Stats stats;
   NTP_Leap leap_status;         /* Leap status */
+  int tai_offset;               /* TAI offset, or 0 if unknown */
   int index;                    /* Index back into the array of source */
   uint32_t ref_id;              /* The reference ID of this source
                                    (i.e. from its IP address, NOT the
@@ -344,12 +345,14 @@ void SRC_AccumulateSample
  double root_delay, 
  double root_dispersion, 
  int stratum,
- NTP_Leap leap_status)
+ NTP_Leap leap_status,
+ int tai_offset)
 {
 
   assert(initialised);
 
   inst->leap_status = leap_status;
+  inst->tai_offset = tai_offset;
 
   DEBUG_LOG("ip=[%s] t=%s ofs=%f del=%f disp=%f str=%d",
             source_to_string(inst), UTI_TimespecToString(sample_time), -offset,

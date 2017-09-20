@@ -73,7 +73,7 @@ test_unit(void)
                   offset, delay, disp);
 
         SRC_AccumulateSample(srcs[j], &ts, offset, delay, disp, delay, disp,
-                             1, LEAP_Normal);
+                             1, LEAP_Normal, 0);
       }
 
       for (k = 0; k <= j; k++) {
