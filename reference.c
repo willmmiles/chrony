@@ -141,7 +141,7 @@ static double last_ref_update_interval;
 /* ================================================== */
 
 static NTP_Leap get_tz_leap(time_t when, int *tai_offset);
-static void update_leap_status(NTP_Leap leap, time_t now, int reset);
+static void update_leap_status(NTP_Leap leap, int tai_offset, time_t now, int reset);
 
 /* ================================================== */
 
@@ -169,7 +169,7 @@ handle_slew(struct timespec *raw,
      and also reset the leap timeout to undo the shift in the scheduler */
   if (change_type != LCL_ChangeAdjust && our_leap_sec && !leap_in_progress) {
     LCL_ReadRawTime(&now);
-    update_leap_status(our_leap_status, now.tv_sec, 1);
+    update_leap_status(our_leap_status, our_tai_offset, now.tv_sec, 1);
   }
 }
 
@@ -283,7 +283,7 @@ REF_Initialise(void)
 void
 REF_Finalise(void)
 {
-  update_leap_status(LEAP_Unsynchronised, 0, 0);
+  update_leap_status(LEAP_Unsynchronised, 0, 0, 0);
 
   if (drift_file) {
     update_drift_file(LCL_ReadAbsoluteFrequency(), our_skew);
@@ -786,13 +786,12 @@ set_leap_timeout(time_t now)
 /* ================================================== */
 
 static void
-update_leap_status(NTP_Leap leap, time_t now, int reset)
+update_leap_status(NTP_Leap leap, int tai_offset, time_t now, int reset)
 {
   NTP_Leap tz_leap;
-  int leap_sec, tai_offset;
+  int leap_sec;
 
   leap_sec = 0;
-  tai_offset = 0;
 
   if (leap_tzname && now) {
     tz_leap = get_tz_leap(now, &tai_offset);
@@ -813,7 +812,11 @@ update_leap_status(NTP_Leap leap, time_t now, int reset)
       leap = LEAP_Normal;
     }
   }
-  
+
+  /* If no offset was supplied, use our current value */
+  if (tai_offset == 0)
+    tai_offset = our_tai_offset;
+
   if ((leap_sec != our_leap_sec || tai_offset != our_tai_offset)
       && !REF_IsLeapSecondClose()) {
     our_leap_sec = leap_sec;
@@ -949,7 +952,8 @@ REF_SetReference(int stratum,
                  double frequency,
                  double skew,
                  double root_delay,
-                 double root_dispersion
+                 double root_dispersion,
+                 int tai_offset
                  )
 {
   double previous_skew, new_skew;
@@ -1079,7 +1083,7 @@ REF_SetReference(int stratum,
     our_residual_freq = frequency;
   }
 
-  update_leap_status(leap, raw_now.tv_sec, 0);
+  update_leap_status(leap, tai_offset, raw_now.tv_sec, 0);
   maybe_log_offset(our_offset, raw_now.tv_sec);
 
   if (step_offset != 0.0) {
@@ -1146,7 +1150,7 @@ REF_SetManualReference
      only supposed to be used with the local source option, really.
      Log as MANU in the tracking log, packets will have NTP_REFID_LOCAL. */
   REF_SetReference(0, LEAP_Unsynchronised, 1, 0x4D414E55UL, NULL,
-                   ref_time, offset, 0.0, frequency, skew, 0.0, 0.0);
+                   ref_time, offset, 0.0, frequency, skew, 0.0, 0.0, 0);
 }
 
 /* ================================================== */
@@ -1174,7 +1178,7 @@ REF_SetUnsynchronised(void)
     schedule_fb_drift(&now);
   }
 
-  update_leap_status(LEAP_Unsynchronised, 0, 0);
+  update_leap_status(LEAP_Unsynchronised, 0, 0, 0);
   our_ref_ip.family = IPADDR_INET4;
   our_ref_ip.addr.in4 = 0;
   our_stratum = 0;

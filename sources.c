@@ -615,6 +615,7 @@ SRC_SelectSource(SRC_Instance updated_inst)
   double best_lo, best_hi, distance, sel_src_distance, max_score;
   double first_sample_ago, max_reach_sample_ago;
   NTP_Leap leap_status;
+  int tai_offset = 0;
 
   if (updated_inst)
     updated_inst->updates++;
@@ -1083,7 +1084,7 @@ SRC_SelectSource(SRC_Instance updated_inst)
                    sources[selected_source_index]->ip_addr,
                    &ref_time, src_offset, src_offset_sd,
                    src_frequency, src_skew,
-                   src_root_delay, src_root_dispersion);
+                   src_root_delay, src_root_dispersion, tai_offset);
 }
 
 /* ================================================== */
