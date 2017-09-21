@@ -1017,6 +1017,9 @@ SRC_SelectSource(SRC_Instance updated_inst)
     if (max_score < sources[i]->sel_score) {
       max_score = sources[i]->sel_score;
       max_score_index = i;
+      /* Use the TAI offset of the best source supplying one */
+      if (sources[i]->tai_offset)
+        tai_offset = sources[i]->tai_offset;
     }
   }
 
