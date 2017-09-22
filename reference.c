@@ -327,6 +327,14 @@ REF_GetLeapMode(void)
 
 /* ================================================== */
 
+int
+REF_GetTaiOffset(void)
+{
+  return our_tai_offset;
+}
+
+/* ================================================== */
+
 static double
 Sqr(double x)
 {
