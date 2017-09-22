@@ -1439,6 +1439,9 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
      measurement in seconds */
   double error_in_estimate;
 
+  /* Remote TAI offset value */
+  int tai_offset = 0;
+
   NTP_Local_Timestamp local_receive, local_transmit;
   double remote_interval, local_interval, response_time;
   double delay_time, precision;
@@ -1719,7 +1722,7 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
                            offset, delay, dispersion,
                            root_delay, root_dispersion,
                            MAX(message->stratum, inst->min_stratum),
-                           (NTP_Leap) pkt_leap, 0);
+                           (NTP_Leap) pkt_leap, tai_offset);
 
       SRC_SelectSource(inst->source);
 
@@ -1809,7 +1812,7 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
     inst->report.authenticated = inst->auth_mode != AUTH_NONE;
     inst->report.tx_tss_char = tss_chars[local_transmit.source];
     inst->report.rx_tss_char = tss_chars[local_receive.source];
-
+    inst->report.tai_offset = tai_offset;
     inst->report.total_valid_count++;
   }
 
