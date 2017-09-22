@@ -67,6 +67,7 @@ CPS_ParseNTPSourceAdd(char *line, CPS_NTP_Source *src)
   src->params.min_delay = 0.0;
   src->params.asymmetry = SRC_DEFAULT_ASYMMETRY;
   src->params.offset = 0.0;
+  src->params.extended_info = 0;
 
   hostname = line;
   line = CPS_SplitWord(line);
@@ -84,6 +85,8 @@ CPS_ParseNTPSourceAdd(char *line, CPS_NTP_Source *src)
 
     if (!strcasecmp(cmd, "auto_offline")) {
       src->params.auto_offline = 1;
+    } else if (!strcasecmp(cmd, "extendedinfo")) {
+      src->params.extended_info = 1;
     } else if (!strcasecmp(cmd, "iburst")) {
       src->params.iburst = 1;
     } else if (!strcasecmp(cmd, "offline")) {

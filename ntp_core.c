@@ -31,6 +31,7 @@
 
 #include "array.h"
 #include "ntp_core.h"
+#include "ntp_extended.h"
 #include "ntp_io.h"
 #include "ntp_signd.h"
 #include "memory.h"
@@ -118,6 +119,8 @@ struct NCR_Instance_Record {
   int poll_target;              /* Target number of sourcestats samples */
 
   int version;                  /* Version set in packets for server/peer */
+
+  int extended_info;            /* Boolean enabling draft NTP extension */ 
 
   double poll_score;            /* Score of current local poll */
 
@@ -524,6 +527,7 @@ NCR_GetInstance(NTP_Remote_Address *remote_addr, NTP_Source_Type type, SourcePar
   }
 
   result->interleaved = params->interleaved;
+  result->extended_info = params->extended_info;
 
   result->minpoll = params->minpoll;
   if (result->minpoll < MIN_MINPOLL)
@@ -893,7 +897,8 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
                 NTP_int64 *local_ntp_rx, /* RESULT : receive timestamp from this packet */
                 NTP_int64 *local_ntp_tx, /* RESULT : transmit timestamp from this packet */
                 NTP_Remote_Address *where_to, /* Where to address the reponse to */
-                NTP_Local_Address *from /* From what address to send it */
+                NTP_Local_Address *from, /* From what address to send it */
+                int extended_information /* Flag enabling extended information transmission */
                 )
 {
   NTP_Packet message;
@@ -953,6 +958,22 @@ transmit_packet(NTP_Mode my_mode, /* The mode this machine wants to be */
     }
 
     precision = LCL_GetSysPrecisionAsLog();
+  }
+  
+  /* Transmit extended information if required */
+  if (extended_information) {
+    int tai_offset = 0;
+    if (my_mode != MODE_CLIENT) {
+        tai_offset = REF_GetTaiOffset(NULL);
+    };
+    
+    length = NEX_GenerateExtension(&message.extensions[ext_len],
+                                   sizeof(message.extensions)-ext_len,
+                                   interleaved, tai_offset);
+    if (length) {
+        last_ext_len = length;
+        ext_len += last_ext_len;
+    }        
   }
 
   if (smooth_time && !UTI_IsZeroTimespec(&local_rx->ts)) {
@@ -1168,7 +1189,8 @@ transmit_timeout(void *arg)
                          &inst->local_rx, &inst->local_tx,
                          &inst->local_ntp_rx, &inst->local_ntp_tx,
                          &inst->remote_addr,
-                         &local_addr);
+                         &local_addr,
+                         inst->extended_info);
 
   ++inst->tx_count;
   inst->valid_rx = 0;
@@ -1346,7 +1368,7 @@ check_packet_auth(NTP_Packet *pkt, int length,
 
 static void
 process_packet_extensions(unsigned char *data, int length,
-                  int auth_ok, int* tai)
+                  int auth_ok, int* has_extended_info, int* tai)
 {
   int i, remainder, ext_length;
   uint16_t ext_id;
@@ -1356,13 +1378,22 @@ process_packet_extensions(unsigned char *data, int length,
     remainder = length - i;
     if(remainder >= NTP_MIN_EXTENSION_LENGTH) {
       ext_length = ntohs(*(uint16_t *)(data + i + 2));
-
       if (ext_length >= NTP_MIN_EXTENSION_LENGTH &&
           ext_length <= remainder && ext_length % 4 == 0) {
         ext_id = ntohs(*(uint16_t *)(data + i));
-
         switch (ext_id) {
-          /* Extension processing goes here */
+          case NTP_EXTENSION_EXTENDED_INFORMATION_ID_MAC:
+            if (!auth_ok)
+              break; /* Ignore if unauthenticated */
+            /* Otherwise fall through */
+          case NTP_EXTENSION_EXTENDED_INFORMATION_ID:
+            if (has_extended_info) {
+                *has_extended_info = 1;
+            }
+            if (tai) {
+                *tai = NEX_GetTAI(data + i +4, ext_length - 4);
+            }
+            break;
           default:
             /* ignore */
             break;
@@ -1770,10 +1801,11 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
     inst->tx_count = 0;
 
     SRC_UpdateReachability(inst->source, synced_packet);
-
+    
     if (pkt_version == 4) {
-        process_packet_extensions(message->extensions,
-          pkt_auth_start - NTP_NORMAL_PACKET_LENGTH, pkt_auth_ok, &tai_offset);
+        process_packet_extensions(message->extensions, 
+          pkt_auth_start - NTP_NORMAL_PACKET_LENGTH, pkt_auth_ok,
+          NULL, &tai_offset);
     }
 
     if (good_packet) {
@@ -1826,7 +1858,7 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
     /* Update the local address and interface */
     inst->local_addr.ip_addr = local_addr->ip_addr;
     inst->local_addr.if_index = local_addr->if_index;
-
+    
     /* And now, requeue the timer */
     if (inst->opmode != MD_OFFLINE) {
       delay_time = get_transmit_delay(inst, 0,
@@ -2051,10 +2083,11 @@ void
 NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_addr,
                      NTP_Local_Timestamp *rx_ts, NTP_Packet *message, int length)
 {
-  NTP_Mode pkt_mode, my_mode;
+  int pkt_version, pkt_auth_start;
+  NTP_Mode pkt_mode, my_mode;  
   NTP_int64 *local_ntp_rx, *local_ntp_tx;
   NTP_Local_Timestamp local_tx, *tx_ts;
-  int valid_auth, log_index, interleaved, poll;
+  int valid_auth, log_index, interleaved, poll, send_extended_info;
   AuthenticationMode auth_mode;
   uint32_t key_id;
 
@@ -2074,7 +2107,9 @@ NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_a
     return;
   }
 
+  pkt_version = NTP_LVM_TO_VERSION(message->lvm);
   pkt_mode = NTP_LVM_TO_MODE(message->lvm);
+  pkt_auth_start = length;
 
   switch (pkt_mode) {
     case MODE_ACTIVE:
@@ -2100,7 +2135,7 @@ NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_a
   }
 
   /* Check if the packet includes MAC that authenticates properly */
-  valid_auth = check_packet_auth(message, length, &auth_mode, &key_id, NULL);
+  valid_auth = check_packet_auth(message, length, &auth_mode, &key_id, &pkt_auth_start);
 
   /* If authentication failed, select whether and how we should respond */
   if (!valid_auth) {
@@ -2121,6 +2156,7 @@ NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_a
   local_ntp_rx = local_ntp_tx = NULL;
   tx_ts = NULL;
   interleaved = 0;
+
 
   /* Check if the client is using the interleaved mode.  If it is, save the
      new transmit timestamp and if the old transmit timestamp is valid, respond
@@ -2145,11 +2181,19 @@ NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_a
      the interval is shorter than the rate limiting interval */
   poll = CLG_GetNtpMinPoll();
   poll = MAX(poll, message->poll);
+  
+  /* Check for ntp extended information */
+  send_extended_info = 0;
+  if (pkt_version == 4) {
+       process_packet_extensions(message->extensions, 
+          pkt_auth_start - NTP_NORMAL_PACKET_LENGTH, 1,
+          &send_extended_info, NULL);
+  }  
 
   /* Send a reply */
   transmit_packet(my_mode, interleaved, poll, NTP_LVM_TO_VERSION(message->lvm),
                   auth_mode, key_id, &message->receive_ts, &message->transmit_ts,
-                  rx_ts, tx_ts, local_ntp_rx, NULL, remote_addr, local_addr);
+                  rx_ts, tx_ts, local_ntp_rx, NULL, remote_addr, local_addr, send_extended_info);
 
   /* Save the transmit timestamp */
   if (tx_ts)
@@ -2570,7 +2614,7 @@ broadcast_timeout(void *arg)
   zero_local_timestamp(&recv_ts);
 
   transmit_packet(MODE_BROADCAST, 0, poll, NTP_VERSION, 0, 0, &orig_ts, &orig_ts, &recv_ts,
-                  NULL, NULL, NULL, &destination->addr, &destination->local_addr);
+                  NULL, NULL, NULL, &destination->addr, &destination->local_addr, 0);
 
   /* Requeue timeout.  We don't care if interval drifts gradually. */
   SCH_AddTimeoutInClass(destination->interval, get_separation(poll), SAMPLING_RANDOMNESS,

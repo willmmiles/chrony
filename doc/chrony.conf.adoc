@@ -242,6 +242,11 @@ specified by the *key* option and which authentication hash function the key
 is using. If the output size of the hash function is longer than 160 bits, the
 default version is 3 for compatibility with older *chronyd* servers. Otherwise,
 the default version is 4.
+*extendedinfo*::
+This option adds Howard Stenn's draft '`Extended Information`' NTPv4
+extension to request packets.  Note that this feature is not currently an
+internet standard, and generally should not be enabled outside of a controlled
+environment.
 
 [[pool]]*pool* _name_ [_option_]...::
 The syntax of this directive is similar to that for the <<server,*server*>>
