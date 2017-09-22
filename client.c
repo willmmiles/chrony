@@ -2284,7 +2284,7 @@ process_cmd_ntpdata(char *line)
 
     request.command = htons(REQ_NTP_DATA);
     UTI_IPHostToNetwork(&remote_addr, &request.data.ntp_data.ip_addr);
-    if (!request_reply(&request, &reply, RPY_NTP_DATA, 0))
+    if (!request_reply(&request, &reply, RPY_NTP_DATA2, 0))
       return 0;
 
     UTI_IPNetworkToHost(&reply.data.ntp_data.remote_addr, &remote_addr);
@@ -2319,7 +2319,8 @@ process_cmd_ntpdata(char *line)
                  "RX timestamping : %N\n"
                  "Total TX        : %U\n"
                  "Total RX        : %U\n"
-                 "Total valid RX  : %U\n",
+                 "Total valid RX  : %U\n"
+                 "TAI offset      : %d\n",
                  UTI_IPToString(&remote_addr), (unsigned long)UTI_IPToRefid(&remote_addr),
                  ntohs(reply.data.ntp_data.remote_port),
                  UTI_IPToString(&local_addr), (unsigned long)UTI_IPToRefid(&local_addr),
@@ -2347,6 +2348,7 @@ process_cmd_ntpdata(char *line)
                  (unsigned long)ntohl(reply.data.ntp_data.total_tx_count),
                  (unsigned long)ntohl(reply.data.ntp_data.total_rx_count),
                  (unsigned long)ntohl(reply.data.ntp_data.total_valid_count),
+                 ntohl(reply.data.ntp_data.tai_offset),
                  REPORT_END);
   }
 

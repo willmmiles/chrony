@@ -153,6 +153,7 @@ typedef struct {
   uint16_t tests;
   int interleaved;
   int authenticated;
+  int32_t tai_offset;
   char tx_tss_char;
   char rx_tss_char;
   uint32_t total_tx_count;

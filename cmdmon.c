@@ -1208,7 +1208,7 @@ handle_ntp_data(CMD_Request *rx_message, CMD_Reply *tx_message)
     return;
   }
 
-  tx_message->reply = htons(RPY_NTP_DATA);
+  tx_message->reply = htons(RPY_NTP_DATA2);
   UTI_IPHostToNetwork(&report.remote_addr, &tx_message->data.ntp_data.remote_addr);
   UTI_IPHostToNetwork(&report.local_addr, &tx_message->data.ntp_data.local_addr);
   tx_message->data.ntp_data.remote_port = htons(report.remote_port);
@@ -1235,6 +1235,7 @@ handle_ntp_data(CMD_Request *rx_message, CMD_Reply *tx_message)
   tx_message->data.ntp_data.total_tx_count = htonl(report.total_tx_count);
   tx_message->data.ntp_data.total_rx_count = htonl(report.total_rx_count);
   tx_message->data.ntp_data.total_valid_count = htonl(report.total_valid_count);
+  tx_message->data.ntp_data.tai_offset = htonl(report.tai_offset);
   memset(tx_message->data.ntp_data.reserved, 0xff, sizeof (tx_message->data.ntp_data.reserved));
 }
 

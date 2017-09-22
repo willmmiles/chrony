@@ -468,7 +468,8 @@ typedef struct {
 #define RPY_CLIENT_ACCESSES_BY_INDEX2 15
 #define RPY_NTP_DATA 16
 #define RPY_MANUAL_TIMESTAMP2 17
-#define N_REPLY_TYPES 18
+#define RPY_NTP_DATA2 18
+#define N_REPLY_TYPES 19
 
 /* Status codes */
 #define STT_SUCCESS 0
@@ -679,7 +680,8 @@ typedef struct {
   uint32_t total_tx_count;
   uint32_t total_rx_count;
   uint32_t total_valid_count;
-  uint32_t reserved[4];
+  int32_t tai_offset;
+  uint32_t reserved[3];
   int32_t EOR;
 } RPY_NTPData;
 

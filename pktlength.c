@@ -139,6 +139,7 @@ static const uint16_t reply_lengths[] = {
   RPY_LENGTH_ENTRY(client_accesses_by_index),   /* CLIENT_ACCESSES_BY_INDEX2 */
   RPY_LENGTH_ENTRY(ntp_data),                   /* NTP_DATA */
   RPY_LENGTH_ENTRY(manual_timestamp),           /* MANUAL_TIMESTAMP2 */
+  RPY_LENGTH_ENTRY(ntp_data),                   /* NTP_DATA2 */
 };
 
 /* ================================================== */
