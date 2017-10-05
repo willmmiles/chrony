@@ -1257,7 +1257,7 @@ is_zero_data(unsigned char *data, int length)
 
 static int
 check_packet_auth(NTP_Packet *pkt, int length,
-                  AuthenticationMode *auth_mode, uint32_t *key_id)
+                  AuthenticationMode *auth_mode, uint32_t *key_id, int *auth_start)
 {
   int i, version, remainder, ext_length, max_mac_length;
   unsigned char *data;
@@ -1294,6 +1294,9 @@ check_packet_auth(NTP_Packet *pkt, int length,
             remainder > NTP_MAX_V4_MAC_LENGTH)
           pkt->lvm = NTP_LVM(NTP_LVM_TO_LEAP(pkt->lvm), 3, NTP_LVM_TO_MODE(pkt->lvm));
 
+        if (auth_start)
+            *auth_start = i;
+
         return 1;
       }
     }
@@ -1328,12 +1331,51 @@ check_packet_auth(NTP_Packet *pkt, int length,
       else if (remainder == 72 && is_zero_data(data + i + 8, remainder - 8))
         *auth_mode = AUTH_MSSNTP_EXT;
     }
+
+    if (auth_start)
+        *auth_start = i;
   } else {
     *auth_mode = AUTH_NONE;
     *key_id = 0;
   }
 
   return 0;
+}
+
+/* ================================================== */
+
+static void
+process_packet_extensions(unsigned char *data, int length,
+                  int auth_ok, int* tai)
+{
+  int i, remainder, ext_length;
+  uint16_t ext_id;
+
+  i = 0;
+  while (1) {
+    remainder = length - i;
+    if(remainder >= NTP_MIN_EXTENSION_LENGTH) {
+      ext_length = ntohs(*(uint16_t *)(data + i + 2));
+
+      if (ext_length >= NTP_MIN_EXTENSION_LENGTH &&
+          ext_length <= remainder && ext_length % 4 == 0) {
+        ext_id = ntohs(*(uint16_t *)(data + i));
+
+        switch (ext_id) {
+          /* Extension processing goes here */
+          default:
+            /* ignore */
+            break;
+        }
+
+        i += ext_length;
+        continue;
+      }
+    }
+
+    /* Not enough bytes left */
+    break;
+  }
 }
 
 /* ================================================== */
@@ -1405,11 +1447,12 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
 {
   SST_Stats stats;
 
-  int pkt_leap, pkt_version;
+  int pkt_leap, pkt_version, pkt_auth_ok;
   uint32_t pkt_refid, pkt_key_id;
   double pkt_root_delay;
   double pkt_root_dispersion;
   AuthenticationMode pkt_auth_mode;
+  int pkt_auth_start;
 
   /* The local time to which the (offset, delay, dispersion) triple will
      be taken to relate.  For client/server operation this is practically
@@ -1470,6 +1513,8 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
   pkt_refid = ntohl(message->reference_id);
   pkt_root_delay = UTI_Ntp32ToDouble(message->root_delay);
   pkt_root_dispersion = UTI_Ntp32ToDouble(message->root_dispersion);
+  pkt_auth_ok = 0;
+  pkt_auth_start = length;
 
   /* Check if the packet is valid per RFC 5905, section 8.
      The test values are 1 when passed and 0 when failed. */
@@ -1498,10 +1543,10 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
      from this peer/server and the packet doesn't have it, the authentication
      is bad, or it's authenticated with a different key than expected, it's got
      to fail.  If we don't expect the packet to be authenticated, just ignore
-     the test. */
-  test5 = inst->auth_mode == AUTH_NONE ||
-          (check_packet_auth(message, length, &pkt_auth_mode, &pkt_key_id) &&
-           pkt_auth_mode == inst->auth_mode && pkt_key_id == inst->auth_key_id);
+     the test; we run it anyways, because some extensions demand authentication. */
+  pkt_auth_ok = check_packet_auth(message, length, &pkt_auth_mode, &pkt_key_id, &pkt_auth_start);
+  test5 = (inst->auth_mode == AUTH_NONE) ||
+          (pkt_auth_ok && pkt_auth_mode == inst->auth_mode && pkt_key_id == inst->auth_key_id);
 
   /* Test 6 checks for unsynchronised server */
   test6 = pkt_leap != LEAP_Unsynchronised &&
@@ -1725,6 +1770,11 @@ receive_packet(NCR_Instance inst, NTP_Local_Address *local_addr,
     inst->tx_count = 0;
 
     SRC_UpdateReachability(inst->source, synced_packet);
+
+    if (pkt_version == 4) {
+        process_packet_extensions(message->extensions,
+          pkt_auth_start - NTP_NORMAL_PACKET_LENGTH, pkt_auth_ok, &tai_offset);
+    }
 
     if (good_packet) {
       /* Do this before we accumulate a new sample into the stats registers, obviously */
@@ -2050,7 +2100,7 @@ NCR_ProcessRxUnknown(NTP_Remote_Address *remote_addr, NTP_Local_Address *local_a
   }
 
   /* Check if the packet includes MAC that authenticates properly */
-  valid_auth = check_packet_auth(message, length, &auth_mode, &key_id);
+  valid_auth = check_packet_auth(message, length, &auth_mode, &key_id, NULL);
 
   /* If authentication failed, select whether and how we should respond */
   if (!valid_auth) {
