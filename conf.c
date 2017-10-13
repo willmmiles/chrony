@@ -1397,6 +1397,11 @@ CNF_CreateDirs(uid_t uid, gid_t gid)
     UTI_CreateDirAndParents(logdir, 0755, uid, gid);
   if (dumpdir[0])
     UTI_CreateDirAndParents(dumpdir, 0755, uid, gid);
+
+  if (refclock_control_socket) {
+    dir = UTI_PathToDir(bind_cmd_path);
+    UTI_CreateDirAndParents(dir, 0770, uid, gid);
+  }
 }
 
 /* ================================================== */

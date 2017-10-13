@@ -108,6 +108,7 @@ MAI_CleanupAndExit(void)
   /* Don't update clock when removing sources */
   REF_SetMode(REF_ModeIgnore);
 
+  RSC_Finalise();
   SMT_Finalise();
   TMC_Finalise();
   MNL_Finalise();
@@ -573,6 +574,7 @@ int main
   MNL_Initialise();
   TMC_Initialise();
   SMT_Initialise();
+  RSC_Initialise();
 
   /* From now on, it is safe to do finalisation on exit */
   initialised = 1;

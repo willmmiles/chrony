@@ -29,6 +29,7 @@
 
 #include "array.h"
 #include "refclock.h"
+#include "refclock_sock_control.h"
 #include "reference.h"
 #include "conf.h"
 #include "local.h"
