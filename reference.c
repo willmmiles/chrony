@@ -1361,6 +1361,9 @@ REF_GetTaiOffset(struct timespec *ts)
 {
   int tai_offset;
 
+  if (ts == NULL)
+    return our_tai_offset;
+
   get_tz_leap(ts->tv_sec, &tai_offset);
 
   return tai_offset;
