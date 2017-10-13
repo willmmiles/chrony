@@ -186,6 +186,9 @@ static char *bind_cmd_path;
 /* Path to Samba (ntp_signd) socket. */
 static char *ntp_signd_socket = NULL;
 
+/* Path to refclock control socket. */
+static char *refclock_control_socket = NULL;
+
 /* Filename to use for storing pid of running chronyd, to prevent multiple
  * chronyds being started. */
 static char *pidfile;
@@ -383,6 +386,7 @@ CNF_Finalise(void)
   Free(logdir);
   Free(bind_cmd_path);
   Free(ntp_signd_socket);
+  Free(refclock_control_socket);
   Free(pidfile);
   Free(rtc_device);
   Free(rtc_file);
@@ -547,6 +551,8 @@ CNF_ParseLine(const char *filename, int number, char *line)
                     &ntp_ratelimit_burst, &ntp_ratelimit_leak);
   } else if (!strcasecmp(command, "refclock")) {
     parse_refclock(p);
+  } else if (!strcasecmp(command, "refcontrol")) {
+    parse_string(p, &refclock_control_socket);
   } else if (!strcasecmp(command, "reselectdist")) {
     parse_double(p, &reselect_distance);
   } else if (!strcasecmp(command, "rtcautotrim")) {
@@ -1874,6 +1880,14 @@ char *
 CNF_GetNtpSigndSocket(void)
 {
   return ntp_signd_socket;
+}
+
+/* ================================================== */
+
+char *
+CNF_GetRefControlSocket(void)
+{
+  return refclock_control_socket;
 }
 
 /* ================================================== */

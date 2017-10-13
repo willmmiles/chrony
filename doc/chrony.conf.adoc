@@ -563,6 +563,20 @@ Set the minimum number of samples kept for this source. This overrides the
 Set the maximum number of samples kept for this source. This overrides the
 <<maxsamples,*maxsamples*>> directive.
 
+[[refcontrol]]*refcontrol*::
+The *refcontrol* directive enables a local socket that listens for messages
+describing SOCKC-based reference clocks that can be initialised after *chronyd*
+starts.  This feature allows for reference clocks to be added or removed at
+runtime.  The parameter is the path to the socket, which *chronyd* creates on 
+start. The format of the messages is described in the _refclock.c_ file in the 
+chrony source code.
++
+An example of the *refcontrol* directive is:
++
+---
+refcontrol /var/run/chrony/refcontrol.sock
+---
+
 [[manual]]*manual*::
 The *manual* directive enables support at run-time for the
 <<chronyc.adoc#settime,*settime*>> command in *chronyc*. If no *manual*
