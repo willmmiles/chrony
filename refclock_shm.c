@@ -69,13 +69,13 @@ static int shm_initialise(RCL_Instance instance) {
 
   id = shmget(SHMKEY + param, sizeof (struct shmTime), IPC_CREAT | perm);
   if (id == -1) {
-    LOG_FATAL("shmget() failed");
+    LOG(LOGS_ERR,"shmget() failed");
     return 0;
   }
    
   shm = (struct shmTime *)shmat(id, 0, 0);
   if ((long)shm == -1) {
-    LOG_FATAL("shmat() failed");
+    LOG(LOGS_ERR,"shmat() failed");
     return 0;
   }
 
