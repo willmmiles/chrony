@@ -1445,7 +1445,8 @@ CNF_AddRefclocks(void)
   unsigned int i;
 
   for (i = 0; i < ARR_GetSize(refclock_sources); i++) {
-    RCL_AddRefclock((RefclockParameters *)ARR_GetElement(refclock_sources, i));
+    if (RCL_AddRefclock((RefclockParameters *)ARR_GetElement(refclock_sources, i), 0) != RCL_Success)
+        LOG_FATAL("refclock creation failed");
   }
 
   ARR_SetSize(refclock_sources, 0);

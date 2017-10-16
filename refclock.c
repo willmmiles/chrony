@@ -84,6 +84,7 @@ struct RCL_Instance_Record {
   struct MedianFilter filter;
   uint32_t ref_id;
   uint32_t lock_ref;
+  uint32_t lock_ref_index;
   double offset;
   double delay;
   double precision;
@@ -123,17 +124,30 @@ get_refclock(unsigned int index)
   return *(RCL_Instance *)ARR_GetElement(refclocks, index);
 }
 
+static void
+resolve_lock_refs(void) {
+  unsigned int i, j, n;
+  n = ARR_GetSize(refclocks);
+
+  for (i = 0; i < n; i++) {
+    RCL_Instance inst = get_refclock(i);
+
+    if (inst->lock_ref) {
+      /* Replace lock refid with index to refclocks */
+      for (j = 0; j < n && get_refclock(j)->ref_id != inst->lock_ref; j++)
+        ;
+      inst->lock_ref_index = j < n ? j : -1;
+    } else
+      inst->lock_ref_index = -1;
+  }
+}
+
 void
 RCL_Initialise(void)
 {
   refclocks = ARR_CreateInstance(sizeof (RCL_Instance));
 
   CNF_AddRefclocks();
-
-  if (ARR_GetSize(refclocks) > 0) {
-    LCL_AddParameterChangeHandler(slew_samples, NULL);
-    LCL_AddDispersionNotifyHandler(add_dispersion, NULL);
-  }
 
   logfileid = CNF_GetLogRefclocks() ? LOG_FileOpen("refclocks",
       "   Date (UTC) Time         Refid  DP L P  Raw offset   Cooked offset      Disp.")
@@ -165,13 +179,19 @@ RCL_Finalise(void)
   ARR_DestroyInstance(refclocks);
 }
 
-int
-RCL_AddRefclock(RefclockParameters *params)
+static void
+cleanup_params(RefclockParameters *params, RCL_Instance inst) {
+    Free(params->driver_name);
+    Free(params->driver_parameter);
+    Free(inst);        
+}
+
+RCL_Status
+RCL_AddRefclock(RefclockParameters *params, int start_now)
 {
   RCL_Instance inst;
 
   inst = MallocNew(struct RCL_Instance_Record);
-  *(RCL_Instance *)ARR_GetNewElement(refclocks) = inst;
 
   if (strcmp(params->driver_name, "SHM") == 0) {
     inst->driver = &RCL_SHM_driver;
@@ -182,14 +202,22 @@ RCL_AddRefclock(RefclockParameters *params)
   } else if (strcmp(params->driver_name, "PHC") == 0) {
     inst->driver = &RCL_PHC_driver;
   } else {
-    LOG_FATAL("unknown refclock driver %s", params->driver_name);
+    LOG(LOGS_ERR,"unknown refclock driver %s", params->driver_name);
+    cleanup_params(params,inst);
+    return RCL_NoSuchDriver;
   }
 
-  if (!inst->driver->init && !inst->driver->poll)
-    LOG_FATAL("refclock driver %s is not compiled in", params->driver_name);
+  if (!inst->driver->init && !inst->driver->poll) {
+    LOG(LOGS_ERR,"refclock driver %s is not compiled in", params->driver_name);
+    cleanup_params(params,inst);
+    return RCL_NoSuchDriver;
+  }
 
-  if (params->tai && !CNF_GetLeapSecTimezone())
-    LOG_FATAL("refclock tai option requires leapsectz");
+  if (params->tai && !CNF_GetLeapSecTimezone()) {
+    LOG(LOGS_ERR,"refclock tai option requires leapsectz");
+    cleanup_params(params,inst);
+    return RCL_InitialisationFailed;
+  }
 
   inst->data = NULL;
   inst->driver_parameter = params->driver_parameter;
@@ -205,6 +233,7 @@ RCL_AddRefclock(RefclockParameters *params)
   inst->stratum = params->stratum;
   inst->tai = params->tai;
   inst->lock_ref = params->lock_ref_id;
+  inst->lock_ref_index = -1;
   inst->offset = params->offset;
   inst->delay = params->delay;
   inst->precision = LCL_GetSysPrecisionAsQuantum();
@@ -229,7 +258,7 @@ RCL_AddRefclock(RefclockParameters *params)
     inst->ref_id = params->ref_id;
   else {
     unsigned char ref[5] = { 0, 0, 0, 0, 0 };
-    unsigned int index = ARR_GetSize(refclocks) - 1;
+    unsigned int index = ARR_GetSize(refclocks);
 
     snprintf((char *)ref, sizeof (ref), "%3.3s", params->driver_name);
     ref[3] = index % 10 + '0';
@@ -255,8 +284,11 @@ RCL_AddRefclock(RefclockParameters *params)
     }
   }
 
-  if (inst->driver->init && !inst->driver->init(inst))
-    LOG_FATAL("refclock %s initialisation failed", params->driver_name);
+  if (inst->driver->init && !inst->driver->init(inst)) {
+    LOG(LOGS_ERR,"refclock %s initialisation failed", params->driver_name);
+    cleanup_params(params,inst);
+    return RCL_InitialisationFailed;
+  }
 
   filter_init(&inst->filter, params->filter_length, params->max_dispersion);
 
@@ -269,13 +301,79 @@ RCL_AddRefclock(RefclockParameters *params)
 
   Free(params->driver_name);
 
-  return 1;
+  *(RCL_Instance *)ARR_GetNewElement(refclocks) = inst;
+
+  resolve_lock_refs();
+
+  if (ARR_GetSize(refclocks) == 1) {
+    LCL_AddParameterChangeHandler(slew_samples, NULL);
+    LCL_AddDispersionNotifyHandler(add_dispersion, NULL);
+  }
+
+  if (start_now) {
+    SRC_SetActive(inst->source);
+    inst->timeout_id = SCH_AddTimeoutByDelay(0.0, poll_timeout, (void *)inst);
+  }
+
+  return RCL_Success;
+}
+
+RCL_Status
+RCL_RemoveRefclock(uint32_t ref_id)
+{
+  unsigned int i, n;
+  n = ARR_GetSize(refclocks);
+
+  for (i = 0; i < n; i++) {
+    RCL_Instance inst = get_refclock(i);
+    if (inst->ref_id == ref_id) {
+      ARR_Instance new_refclocks = ARR_CreateInstance(sizeof (RCL_Instance));
+      unsigned int j;
+
+      for (j = 0; j < n; j++) {
+        if (j == i) continue;
+        RCL_Instance jinst = get_refclock(j);
+        if (jinst->lock_ref_index > i) {
+            jinst->lock_ref_index--;
+        } else if (jinst->lock_ref_index == i) {
+            jinst->lock_ref_index = -1;
+        }
+        *(RCL_Instance *)ARR_GetNewElement(new_refclocks) = jinst;
+      }
+
+      ARR_DestroyInstance(refclocks);
+      refclocks = new_refclocks;
+
+      if (inst->driver->fini)
+        inst->driver->fini(inst);
+
+      filter_fini(&inst->filter);
+
+      SCH_RemoveTimeout(inst->timeout_id);
+
+      SRC_ResetReachability(inst->source);
+      SRC_UnsetActive(inst->source);
+      SRC_DestroyInstance(inst->source);
+
+      Free(inst->driver_parameter);
+      Free(inst);
+
+      if (ARR_GetSize(refclocks) == 0) {
+        LCL_RemoveParameterChangeHandler(slew_samples, NULL);
+        LCL_RemoveDispersionNotifyHandler(add_dispersion, NULL);
+      }
+
+      return RCL_Success;
+    }
+  }
+
+  return RCL_NoSuchSource;
 }
 
 void
 RCL_StartRefclocks(void)
 {
-  unsigned int i, j, n;
+  unsigned int i, n;
 
   n = ARR_GetSize(refclocks);
 
@@ -284,14 +382,6 @@ RCL_StartRefclocks(void)
 
     SRC_SetActive(inst->source);
     inst->timeout_id = SCH_AddTimeoutByDelay(0.0, poll_timeout, (void *)inst);
-
-    if (inst->lock_ref) {
-      /* Replace lock refid with index to refclocks */
-      for (j = 0; j < n && get_refclock(j)->ref_id != inst->lock_ref; j++)
-        ;
-      inst->lock_ref = j < n ? j : -1;
-    } else
-      inst->lock_ref = -1;
   }
 }
 
@@ -487,12 +577,12 @@ RCL_AddCookedPulse(RCL_Instance instance, struct timespec *cooked_time,
   else if (offset >= 0.5 / rate)
     offset -= 1.0 / rate;
 
-  if (instance->lock_ref != -1) {
+  if (instance->lock_ref_index != -1) {
     RCL_Instance lock_refclock;
     struct timespec ref_sample_time;
     double sample_diff, ref_offset, ref_dispersion, shift;
 
-    lock_refclock = get_refclock(instance->lock_ref);
+    lock_refclock = get_refclock(instance->lock_ref_index);
 
     if (!filter_get_last_sample(&lock_refclock->filter,
           &ref_sample_time, &ref_offset, &ref_dispersion)) {
@@ -628,7 +718,7 @@ pps_stratum(RCL_Instance instance, struct timespec *ts)
   for (i = 0; i < ARR_GetSize(refclocks); i++) {
     refclock = get_refclock(i);
     if (refclock->ref_id == ref_id &&
-        refclock->pps_active && refclock->lock_ref == -1)
+        refclock->pps_active && refclock->lock_ref_index == -1)
       return stratum - 1;
   }
 
@@ -659,7 +749,7 @@ poll_timeout(void *arg)
     inst->driver_polled = 0;
 
     if (sample_ok) {
-      if (inst->pps_active && inst->lock_ref == -1)
+      if (inst->pps_active && inst->lock_ref_index == -1)
         /* Handle special case when PPS is used with local stratum */
         stratum = pps_stratum(inst, &sample_time);
       else

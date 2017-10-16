@@ -62,9 +62,20 @@ typedef struct {
   int (*poll)(RCL_Instance instance);
 } RefclockDriver;
 
+/* Status values returned by operations that indirectly result from user
+   input. */
+typedef enum {
+  RCL_Success, /* Operation successful */
+  RCL_NoSuchDriver, /* Add - attempt to add a missing or invalid driver name */
+  RCL_InitialisationFailed, /* Add - driver initialisation did not succeed */
+  RCL_NoSuchSource, /* Remove - attempt to remove a source that is not known */
+} RCL_Status;
+
+
 extern void RCL_Initialise(void);
 extern void RCL_Finalise(void);
-extern int RCL_AddRefclock(RefclockParameters *params);
+extern RCL_Status RCL_AddRefclock(RefclockParameters *params, int start_now);
+extern RCL_Status RCL_RemoveRefclock(uint32_t ref_id);
 extern void RCL_StartRefclocks(void);
 extern void RCL_ReportSource(RPT_SourceReport *report, struct timespec *now);
 
