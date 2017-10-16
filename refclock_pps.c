@@ -59,37 +59,46 @@ static int pps_initialise(RCL_Instance instance) {
 
   fd = open(path, O_RDWR);
   if (fd < 0) {
-    LOG_FATAL("open() failed on %s", path);
+    LOG(LOGS_ERR,"open() failed on %s", path);
     return 0;
   }
 
   UTI_FdSetCloexec(fd);
 
   if (time_pps_create(fd, &handle) < 0) {
-    LOG_FATAL("time_pps_create() failed on %s", path);
+    close(fd);
+    LOG(LOGS_ERR,"time_pps_create() failed on %s", path);
     return 0;
   }
 
   if (time_pps_getcap(handle, &mode) < 0) {
-    LOG_FATAL("time_pps_getcap() failed on %s", path);
+    time_pps_destroy(&handle);
+    close(fd);
+    LOG(LOGS_ERR,"time_pps_getcap() failed on %s", path);
     return 0;
   }
 
   if (time_pps_getparams(handle, &params) < 0) {
-    LOG_FATAL("time_pps_getparams() failed on %s", path);
+    time_pps_destroy(&handle);
+    close(fd);
+    LOG(LOGS_ERR,"time_pps_getparams() failed on %s", path);
     return 0;
   }
 
   if (!edge_clear) {
     if (!(mode & PPS_CAPTUREASSERT)) {
-      LOG_FATAL("CAPTUREASSERT not supported on %s", path);
+      LOG(LOGS_ERR,"CAPTUREASSERT not supported on %s", path);
+      time_pps_destroy(&handle);
+      close(fd);
       return 0;
     }
     params.mode |= PPS_CAPTUREASSERT;
     params.mode &= ~PPS_CAPTURECLEAR;
   } else {
     if (!(mode & PPS_CAPTURECLEAR)) {
-      LOG_FATAL("CAPTURECLEAR not supported on %s", path);
+      LOG(LOGS_ERR,"CAPTURECLEAR not supported on %s", path);
+      time_pps_destroy(&handle);
+      close(fd);
       return 0;
     }
     params.mode |= PPS_CAPTURECLEAR;
@@ -97,7 +106,9 @@ static int pps_initialise(RCL_Instance instance) {
   }
 
   if (time_pps_setparams(handle, &params) < 0) {
-    LOG_FATAL("time_pps_setparams() failed on %s", path);
+    LOG(LOGS_ERR,"time_pps_setparams() failed on %s", path);
+    time_pps_destroy(&handle);
+    close(fd);
     return 0;
   }
 
