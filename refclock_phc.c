@@ -64,7 +64,7 @@ static int phc_initialise(RCL_Instance instance)
  
   phc_fd = SYS_Linux_OpenPHC(path, 0);
   if (phc_fd < 0) {
-    LOG_FATAL("Could not open PHC");
+    LOG(LOGS_ERR,"Could not open PHC");
     return 0;
   }
 
@@ -83,8 +83,12 @@ static int phc_initialise(RCL_Instance instance)
     phc->clock = HCL_CreateInstance(UTI_Log2ToDouble(RCL_GetDriverPoll(instance)));
 
     if (!SYS_Linux_SetPHCExtTimestamping(phc->fd, phc->pin, phc->channel,
-                                         rising_edge, !rising_edge, 1))
-      LOG_FATAL("Could not enable external PHC timestamping");
+                                         rising_edge, !rising_edge, 1)) {
+      LOG(LOGS_ERR,"Could not enable external PHC timestamping");
+      close(phc->fd);
+      Free(phc);
+      return 0;
+    }
 
     SCH_AddFileHandler(phc->fd, SCH_FILE_INPUT, read_ext_pulse, instance);
   } else {
