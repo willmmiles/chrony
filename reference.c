@@ -167,7 +167,7 @@ handle_slew(struct timespec *raw,
 
   /* When the clock was stepped, check if that doesn't change our leap status
      and also reset the leap timeout to undo the shift in the scheduler */
-  if (change_type != LCL_ChangeAdjust && our_leap_sec && !leap_in_progress) {
+  if (change_type != LCL_ChangeAdjust && !leap_in_progress) {
     LCL_ReadRawTime(&now);
     update_leap_status(our_leap_status, now.tv_sec, 1);
   }
