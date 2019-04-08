@@ -1051,13 +1051,16 @@ REF_SetReference(int stratum, NTP_Leap leap, int combined_sources,
   /* Adjust the clock */
   LCL_AccumulateFrequencyAndOffset(frequency, accumulate_offset, correction_rate);
     
-  update_leap_status(leap, raw_now.tv_sec, 0);
   maybe_log_offset(offset, raw_now.tv_sec);
 
   if (step_offset != 0.0) {
     if (LCL_ApplyStepOffset(step_offset))
       LOG(LOGS_WARN, "System clock was stepped by %.6f seconds", -step_offset);
   }
+
+  /* Reread the now-updated time before doing leap second analysis */
+  LCL_ReadRawTime(&raw_now);
+  update_leap_status(leap, tai_offset, raw_now.tv_sec, 0);
 
   LCL_SetSyncStatus(are_we_synchronised, offset_sd,
                     root_delay / 2.0 + get_root_dispersion(&now));
