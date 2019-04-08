@@ -254,6 +254,9 @@ REF_Initialise(void)
     }
   }
 
+  /* Initialize tai offset and leap second state from reference, if any */
+  update_leap_status(LEAP_Normal, 0, time(NULL), 0);
+
   CNF_GetMakeStep(&make_step_limit, &make_step_threshold);
   CNF_GetMaxChange(&max_offset_delay, &max_offset_ignore, &max_offset);
   CNF_GetMailOnChange(&do_mail_change, &mail_change_threshold, &mail_change_user);
